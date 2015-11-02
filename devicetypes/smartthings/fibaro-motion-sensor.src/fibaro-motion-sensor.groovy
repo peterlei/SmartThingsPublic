@@ -214,7 +214,7 @@ def createEvent(physicalgraph.zwave.commands.firmwareupdatemdv1.FirmwareMdReport
 def zwaveEvent(physicalgraph.zwave.commands.sensoralarmv1.SensorAlarmReport cmd)
 {
 	def map = [:]
-    map.name = "acceleration"
+	map.name = "acceleration"
 
 	map.value = cmd.sensorState ? "active" : "inactive"
 	if (map.value == "active") {
@@ -223,7 +223,7 @@ def zwaveEvent(physicalgraph.zwave.commands.sensoralarmv1.SensorAlarmReport cmd)
 	else {
 		map.descriptionText = "$device.displayName vibration has stopped"
 	}
-    map
+	map
 }
 
 // Event Generation
