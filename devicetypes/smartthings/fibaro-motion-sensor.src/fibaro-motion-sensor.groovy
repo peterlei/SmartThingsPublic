@@ -162,10 +162,6 @@ def parse(String description)
 	}
 
 	if (cmd) {
-		if( cmd.CMD == "8407" ) {
-            result << response(zwave.batteryV1.batteryGet().format())
-        	result << new physicalgraph.device.HubAction(zwave.wakeUpV1.wakeUpNoMoreInformation().format())
-        }
 		result << zwaveEvent(cmd)
 	}
 
