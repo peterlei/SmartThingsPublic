@@ -166,7 +166,7 @@ def parse(String description)
             result << response(zwave.batteryV1.batteryGet().format())
         	result << new physicalgraph.device.HubAction(zwave.wakeUpV1.wakeUpNoMoreInformation().format())
         }
-		result << createEvent(zwaveEvent(cmd))
+		result << zwaveEvent(cmd)
 	}
 
     if ( result[0] != null ) {
@@ -223,13 +223,18 @@ def zwaveEvent(physicalgraph.zwave.commands.sensoralarmv1.SensorAlarmReport cmd)
 	else {
 		map.descriptionText = "$device.displayName vibration has stopped"
 	}
-	map
+	createEvent(map)
 }
 
 // Event Generation
 def zwaveEvent(physicalgraph.zwave.commands.wakeupv1.WakeUpNotification cmd)
 {
-	[descriptionText: "${device.displayName} woke up", isStateChange: false]
+	createEvent(descriptionText: "${device.displayName} woke up", isStateChange: false)
+
+	def cmds = []
+	cmds << zwave.batteryV1.batteryGet().format()
+	cmds << zwave.wakeUpV1.wakeUpNoMoreInformation().format()
+	response(delayBetween(cmds, 1200))
 }
 
 def zwaveEvent(physicalgraph.zwave.commands.sensormultilevelv2.SensorMultilevelReport cmd)
@@ -250,17 +255,26 @@ def zwaveEvent(physicalgraph.zwave.commands.sensormultilevelv2.SensorMultilevelR
 			map.name = "illuminance"
 			break;
 	}
-	map
+	createEvent(map)
 }
 
 def zwaveEvent(physicalgraph.zwave.commands.batteryv1.BatteryReport cmd) {
 log.debug cmd
 	def map = [:]
 	map.name = "battery"
-	map.value = cmd.batteryLevel > 0 ? cmd.batteryLevel.toString() : 1
+	if (cmd.batteryLevel == 0xFF) {
+		map.value = 1
+		map.descriptionText = "${device.displayName} has a low battery"
+		map.isStateChange = true
+	} else {
+		map.value = cmd.batteryLevel
+		// testing:
+		map.isStateChange = true
+	}
 	map.unit = "%"
-	map.displayed = false
-	map
+	// always show the current battery level
+	map.displayed = true
+	createEvent(map)
 }
 
 def zwaveEvent(physicalgraph.zwave.commands.sensorbinaryv1.SensorBinaryReport cmd) {
@@ -273,7 +287,7 @@ def zwaveEvent(physicalgraph.zwave.commands.sensorbinaryv1.SensorBinaryReport cm
 	else {
 		map.descriptionText = "$device.displayName motion has stopped"
 	}
-	map
+	createEvent(map)
 }
 
 def zwaveEvent(physicalgraph.zwave.commands.basicv1.BasicSet cmd) {
@@ -286,12 +300,12 @@ def zwaveEvent(physicalgraph.zwave.commands.basicv1.BasicSet cmd) {
 	else {
 		map.descriptionText = "$device.displayName motion has stopped"
 	}
-	map
+	createEvent(map)
 }
 
 def zwaveEvent(physicalgraph.zwave.Command cmd) {
 	log.debug "Catchall reached for cmd: ${cmd.toString()}}"
-	[:]
+	createEvent([:])
 }
 
 def zwaveEvent(physicalgraph.zwave.commands.configurationv2.ConfigurationReport cmd) {
