@@ -40,6 +40,8 @@ preferences {
 	}
 	section("Using either on this light sensor (optional) or the local sunrise and sunset"){
 		input "lightSensor", "capability.illuminanceMeasurement", required: false
+		input "onLux", "number", title: "on lux", required: false, defaultValue: 50
+		input "offLux", "number", title: "off lux", required: false, defaultValue: 75
 	}
 	section("Set dimmer level...") {
 		input "level", "enum", description: "Dimmer level", title: "Level", options: ["10", "20", "30", "40", "50", "60", "70", "80", "90", "100"], defaultValue: "50"
@@ -116,7 +118,7 @@ def motionHandler(evt) {
 def illuminanceHandler(evt) {
 	log.debug "$evt.name: $evt.value, lastStatus: $state.lastStatus, motionStopTime: $state.motionStopTime"
 	def lastStatus = state.lastStatus
-	if (lastStatus != "off" && evt.integerValue > 50) {
+	if (lastStatus != "off" && evt.integerValue > offLux) {
 		lights.off()
 		dimmers.off()
 		state.lastStatus = "off"
@@ -131,7 +133,7 @@ def illuminanceHandler(evt) {
 			}
 		}
 	}
-	else if (lastStatus != "on" && evt.integerValue < 30){
+	else if (lastStatus != "on" && evt.integerValue < onLux){
 		lights.on()
 		dimmers.on()
 		dimmers.setLevel(level as Integer)
@@ -168,7 +170,8 @@ def astroCheck() {
 private enabled() {
 	def result
 	if (lightSensor) {
-		result = lightSensor.currentIlluminance?.toInteger() < 30
+		result = lightSensor.currentIlluminance?.toInteger() < onLux
+		log.debug "result ${result}: lux ${lightSensor.currentIlluminance?.toInteger()}, onLux ${onLux}"
 	}
 	else {
 		def t = now()
