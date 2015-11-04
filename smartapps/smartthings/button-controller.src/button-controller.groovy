@@ -106,6 +106,10 @@ def getButtonSections(buttonNumber) {
 			input "lights_${buttonNumber}_pushed", "capability.switch", title: "Pushed", multiple: true, required: false
 			input "lights_${buttonNumber}_held", "capability.switch", title: "Held", multiple: true, required: false
 		}
+		section("Dimmers") {
+			input "dimmers_${buttonNumber}_pushed", "capability.switchLevel", title: "Pushed", multiple: true, required: false
+			input "dimmers_${buttonNumber}_held", "capability.switchLevel", title: "Held", multiple: true, required: false
+		}
 		section("Locks") {
 			input "locks_${buttonNumber}_pushed", "capability.lock", title: "Pushed", multiple: true, required: false
 			input "locks_${buttonNumber}_held", "capability.lock", title: "Held", multiple: true, required: false
@@ -166,6 +170,7 @@ def configured() {
 
 def buttonConfigured(idx) {
 	return settings["lights_$idx_pushed"] ||
+		settings["dimmers_$idx_pushed"] ||
 		settings["locks_$idx_pushed"] ||
 		settings["sonos_$idx_pushed"] ||
 		settings["mode_$idx_pushed"] ||
@@ -211,6 +216,9 @@ def executeHandlers(buttonNumber, value) {
 
 	def lights = find('lights', buttonNumber, value)
 	if (lights != null) toggle(lights)
+
+	def dimmers = find('dimmers', buttonNumber, value)
+	if (dimmers != null) toggle_dimmer(dimmers)
 
 	def locks = find('locks', buttonNumber, value)
 	if (locks != null) toggle(locks)
@@ -276,6 +284,22 @@ def toggle(devices) {
     }
 	else {
 		devices.on()
+	}
+}
+
+def toggle_dimmer(devices) {
+	log.debug "toggle_dimmer: $devices = ${devices*.currentValue('switch')}"
+
+	if (devices*.currentValue('switch').contains('on')) {
+		devices.off()
+	}
+	else if (devices*.currentValue('switch').contains('off')) {
+		devices.on()
+        devices.setLevel(100)
+	}
+	else {
+		devices.on()
+        devices.setLevel(100)
 	}
 }
 
