@@ -29,6 +29,9 @@ preferences {
 	section("Control these lights..."){
 		input "lights", "capability.switch", multiple: true
 	}
+	section("Control these dimmers..."){
+		input "dimmers", "capability.switchLevel", multiple: true
+	}
 	section("Turning on when it's dark and there's movement..."){
 		input "motionSensor", "capability.motionSensor", title: "Where?"
 	}
@@ -37,6 +40,9 @@ preferences {
 	}
 	section("Using either on this light sensor (optional) or the local sunrise and sunset"){
 		input "lightSensor", "capability.illuminanceMeasurement", required: false
+	}
+	section("Set dimmer level...") {
+		input "level", "enum", description: "Dimmer level", title: "Level", options: ["10", "20", "30", "40", "50", "60", "70", "80", "90", "100"], defaultValue: "50"
 	}
 	section ("Sunrise offset (optional)...") {
 		input "sunriseOffsetValue", "text", title: "HH:MM", required: false
@@ -91,6 +97,8 @@ def motionHandler(evt) {
 		if (enabled()) {
 			log.debug "turning on lights due to motion"
 			lights.on()
+			dimmers.on()
+			dimmers.setLevel(level as Integer)
 			state.lastStatus = "on"
 		}
 		state.motionStopTime = null
@@ -110,6 +118,7 @@ def illuminanceHandler(evt) {
 	def lastStatus = state.lastStatus
 	if (lastStatus != "off" && evt.integerValue > 50) {
 		lights.off()
+		dimmers.off()
 		state.lastStatus = "off"
 	}
 	else if (state.motionStopTime) {
@@ -117,12 +126,15 @@ def illuminanceHandler(evt) {
 			def elapsed = now() - state.motionStopTime
 			if (elapsed >= ((delayMinutes ?: 0) * 60000L) - 2000) {
 				lights.off()
+				dimmers.off()
 				state.lastStatus = "off"
 			}
 		}
 	}
 	else if (lastStatus != "on" && evt.integerValue < 30){
 		lights.on()
+		dimmers.on()
+		dimmers.setLevel(level as Integer)
 		state.lastStatus = "on"
 	}
 }
@@ -135,6 +147,7 @@ def turnOffMotionAfterDelay() {
 		if (elapsed >= ((delayMinutes ?: 0) * 60000L) - 2000) {
         	log.debug "Turning off lights"
 			lights.off()
+			dimmers.off()
 			state.lastStatus = "off"
 		}
 	}
