@@ -45,6 +45,10 @@ def selectButton() {
 			input "buttonDevice", "capability.button", title: "Button", multiple: false, required: true
 		}
 
+		section() {
+			label title: "Assign a name", required: false
+		}
+
 		section(title: "More options", hidden: hideOptionsSection(), hideable: true) {
 
 			def timeLabel = timeIntervalLabel()
