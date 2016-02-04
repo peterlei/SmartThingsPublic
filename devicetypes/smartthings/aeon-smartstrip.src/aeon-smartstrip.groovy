@@ -22,6 +22,7 @@ metadata {
 		capability "Sensor"
 
 		command "reset"
+		command "configure"
 
 		(1..4).each { n ->
 			attribute "switch$n", "enum", ["on", "off"]
@@ -82,6 +83,9 @@ metadata {
 		standardTile("refresh", "device.power", inactiveLabel: false, decoration: "flat", width: 2, height: 2) {
 			state "default", label:'', action:"refresh.refresh", icon:"st.secondary.refresh"
 		}
+		standardTile("configure", "device.switch", inactiveLabel: false, decoration: "flat") {
+                        state "default", label:"", action:"configure", icon:"st.secondary.configure"
+                }
 		(1..4).each { n ->
 			standardTile("switch$n", "switch$n", canChangeIcon: true, width: 2, height: 2) {
 				state "on", label: '${name}', action: "off$n", icon: "st.switches.switch.on", backgroundColor: "#00a0dc"
@@ -112,7 +116,7 @@ metadata {
 				 "switch2","power2","energy2",
 				 "switch3","power3","energy3",
 				 "switch4","power4","energy4",
-				 ])
+				 "configure"])
 	}
 }
 
