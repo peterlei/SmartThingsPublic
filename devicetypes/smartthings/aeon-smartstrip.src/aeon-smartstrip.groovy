@@ -31,6 +31,11 @@ metadata {
 			command "off$n"
 			command "reset$n"
 		}
+		(5..6).each { n ->
+			attribute "power$n", "number"
+			attribute "energy$n", "number"
+			command "reset$n"
+		}
 
 		fingerprint deviceId: "0x1001", inClusters: "0x25,0x32,0x27,0x70,0x85,0x72,0x86,0x60", outClusters: "0x82"
 	}
@@ -77,7 +82,6 @@ metadata {
 		standardTile("refresh", "device.power", inactiveLabel: false, decoration: "flat", width: 2, height: 2) {
 			state "default", label:'', action:"refresh.refresh", icon:"st.secondary.refresh"
 		}
-
 		(1..4).each { n ->
 			standardTile("switch$n", "switch$n", canChangeIcon: true, width: 2, height: 2) {
 				state "on", label: '${name}', action: "off$n", icon: "st.switches.switch.on", backgroundColor: "#00a0dc"
@@ -90,14 +94,25 @@ metadata {
 				state "default", label:'${currentValue} kWh'
 			}
 		}
+		(5..6).each { n ->
+			valueTile("power$n", "power$n", decoration: "flat") {
+				state "default", label:'${currentValue} W'
+			}
+			valueTile("energy$n", "energy$n", decoration: "flat") {
+				state "default", label:'${currentValue} kWh'
+			}
+		}
+
 
 		main(["switch", "power", "energy", "switch1", "switch2", "switch3", "switch4"])
 		details(["switch","power","energy",
+				 "power5", "energy5", "refresh",
+				 "power6", "energy6", "reset",
 				 "switch1","power1","energy1",
 				 "switch2","power2","energy2",
 				 "switch3","power3","energy3",
 				 "switch4","power4","energy4",
-				 "refresh","reset"])
+				 ])
 	}
 }
 
@@ -134,8 +149,10 @@ def zwaveEvent(physicalgraph.zwave.commands.multichannelv3.MultiChannelCmdEncap 
 			} else if (endpoint == 0) {
 				zwaveEvent(encapsulatedCommand, 0)
 			} else {
-				log.debug("Ignoring metered outlet $endpoint msg: $encapsulatedCommand")
-				[]
+//				log.debug("Ignoring metered outlet $endpoint msg: $encapsulatedCommand")
+//				[]
+				// Moving outlets 1-2 to power/energy 5-6
+				zwaveEvent(encapsulatedCommand, endpoint + 4)
 			}
 		} else {
 			zwaveEvent(encapsulatedCommand, cmd.sourceEndPoint as Integer)
@@ -151,9 +168,9 @@ def zwaveEvent(physicalgraph.zwave.commands.basicv1.BasicReport cmd, endpoint) {
 		cmds += delayBetween([2,0].collect { s -> encap(zwave.meterV3.meterGet(scale: s), endpoint) }, 1000)
 		if(endpoint < 4) cmds += ["delay 1500", encap(zwave.basicV1.basicGet(), endpoint + 1)]
 	} else if (events[0].isStateChange) {
-		events += (1..4).collect { ep -> endpointEvent(ep, map.clone()) }
+		events += (1..6).collect { ep -> endpointEvent(ep, map.clone()) }
 		cmds << "delay 3000"
-		cmds += delayBetween((0..4).collect { ep -> encap(zwave.meterV3.meterGet(scale: 2), ep) }, 800)
+		cmds += delayBetween((0..6).collect { ep -> encap(zwave.meterV3.meterGet(scale: 2), ep) }, 800)
 	}
 	if(cmds) events << response(cmds)
 	events
@@ -164,9 +181,9 @@ def zwaveEvent(physicalgraph.zwave.commands.switchbinaryv1.SwitchBinaryReport cm
 	def events = [endpointEvent(endpoint, map)]
 	def cmds = []
 	if (!endpoint && events[0].isStateChange) {
-		events += (1..4).collect { ep -> endpointEvent(ep, map.clone()) }
+		events += (1..6).collect { ep -> endpointEvent(ep, map.clone()) }
 		cmds << "delay 3000"
-		cmds += delayBetween((1..4).collect { ep -> encap(zwave.meterV3.meterGet(scale: 2), ep) })
+		cmds += delayBetween((1..6).collect { ep -> encap(zwave.meterV3.meterGet(scale: 2), ep) })
 	}
 	if(cmds) events << response(cmds)
 	events
@@ -183,7 +200,7 @@ def zwaveEvent(physicalgraph.zwave.commands.meterv3.MeterReport cmd, ep) {
 	}
 	if (!ep && event.isStateChange && event.name == "energy") {
 		// Total strip energy consumption changed, check individual outlets
-		(1..4).each { endpoint ->
+		(1..6).each { endpoint ->
 			cmds << encap(zwave.meterV2.meterGet(scale: 0), endpoint)
 			cmds << "delay 400"
 		}
@@ -228,36 +245,45 @@ def refresh() {
 		zwave.basicV1.basicGet().format(),
 		zwave.meterV3.meterGet(scale: 0).format(),
 		zwave.meterV3.meterGet(scale: 2).format(),
+		// also always get non-switched outlets state
+		encap(zwave.meterV3.meterGet(scale: 0), 5),
+		encap(zwave.meterV3.meterGet(scale: 2), 5),
+		encap(zwave.meterV3.meterGet(scale: 0), 6),
+		encap(zwave.meterV3.meterGet(scale: 2), 6),
 		encap(zwave.basicV1.basicGet(), 1)  // further gets are sent from the basic report handler
-	])
+	], 500)
 }
 
 def resetCmd(endpoint = null) {
 	delayBetween([
 		encap(zwave.meterV2.meterReset(), endpoint),
-		encap(zwave.meterV2.meterGet(scale: 0), endpoint)
+		encap(zwave.meterV3.meterGet(scale: 0), endpoint)
 	])
 }
 
 def reset() {
-	delayBetween([resetCmd(null), reset1(), reset2(), reset3(), reset4()])
+	delayBetween([resetCmd(null), reset1(), reset2(), reset3(), reset4(), reset5(), reset6()])
 }
 
 def reset1() { resetCmd(1) }
 def reset2() { resetCmd(2) }
 def reset3() { resetCmd(3) }
 def reset4() { resetCmd(4) }
+def reset5() { resetCmd(5) }
+def reset6() { resetCmd(6) }
 
 def configure() {
+	log.debug "Doing configure()"
+
 	def cmds = [
 		zwave.configurationV1.configurationSet(parameterNumber: 101, size: 4, configurationValue: [0, 0, 0, 1]).format(),
-		zwave.configurationV1.configurationSet(parameterNumber: 102, size: 4, configurationValue: [0, 0, 0x79, 0]).format(),
+		zwave.configurationV1.configurationSet(parameterNumber: 102, size: 4, configurationValue: [0, 0, 0x7f, 0]).format(),
 		zwave.configurationV1.configurationSet(parameterNumber: 112, size: 4, scaledConfigurationValue: 90).format(),
 	]
-	[5, 8, 9, 10, 11].each { p ->
+	[5, 6, 7, 8, 9, 10, 11].each { p ->
 		cmds << zwave.configurationV1.configurationSet(parameterNumber: p, size: 2, scaledConfigurationValue: 5).format()
 	}
-	[12, 15, 16, 17, 18].each { p ->
+	[12, 13, 14, 15, 16, 17, 18].each { p ->
 		cmds << zwave.configurationV1.configurationSet(parameterNumber: p, size: 1, scaledConfigurationValue: 50).format()
 	}
 	cmds += [
@@ -271,10 +297,14 @@ private encap(cmd, endpoint) {
 	if (endpoint) {
 		if (cmd.commandClassId == 0x32) {
 			// Metered outlets are numbered differently than switches
-			if (endpoint < 0x80) {
-				endpoint += 2
-			} else {
+			if (endpoint >= 0x80) {
 				endpoint = ((endpoint & 0x7F) << 2) | 0x80
+			} else if (endpoint > 4) {
+				// non-switched outlets
+				endpoint -= 4
+			} else {
+				// switched outlets
+				endpoint += 2
 			}
 		}
 		zwave.multiChannelV3.multiChannelCmdEncap(destinationEndPoint:endpoint).encapsulate(cmd).format()
