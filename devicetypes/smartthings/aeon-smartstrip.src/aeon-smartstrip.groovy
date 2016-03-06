@@ -20,6 +20,7 @@ metadata {
 		capability "Configuration"
 		capability "Actuator"
 		capability "Sensor"
+		capability "Temperature Measurement"
 
 		command "reset"
 		command "configure"
@@ -106,7 +107,19 @@ metadata {
 				state "default", label:'${currentValue} kWh'
 			}
 		}
-
+		valueTile("temperature", "device.temperature", inactiveLabel: false, width: 2, height: 2, decoration: "flat") {
+			state "temperature", label:'${currentValue}',
+				backgroundColors:
+				[
+					[value: 31, color: "#153591"],
+					[value: 44, color: "#1e9cbb"],
+					[value: 59, color: "#90d2a7"],
+					[value: 74, color: "#44b621"],
+					[value: 84, color: "#f1d801"],
+					[value: 95, color: "#d04e00"],
+					[value: 96, color: "#bc2323"]
+				]
+		}
 
 		main(["switch", "power", "energy", "switch1", "switch2", "switch3", "switch4"])
 		details(["switch","power","energy",
@@ -116,7 +129,7 @@ metadata {
 				 "switch2","power2","energy2",
 				 "switch3","power3","energy3",
 				 "switch4","power4","energy4",
-				 "configure"])
+				 "temperature", "configure"])
 	}
 }
 
@@ -174,7 +187,7 @@ def zwaveEvent(physicalgraph.zwave.commands.basicv1.BasicReport cmd, endpoint) {
 	} else if (events[0].isStateChange) {
 		events += (1..6).collect { ep -> endpointEvent(ep, map.clone()) }
 		cmds << "delay 3000"
-		cmds += delayBetween((0..6).collect { ep -> encap(zwave.meterV3.meterGet(scale: 2), ep) }, 800)
+		cmds += delayBetween((0..6).collect { ep -> encap(zwave.meterV3.meterGet(scale: 2), ep) }, 1000)
 	}
 	if(cmds) events << response(cmds)
 	events
@@ -187,7 +200,7 @@ def zwaveEvent(physicalgraph.zwave.commands.switchbinaryv1.SwitchBinaryReport cm
 	if (!endpoint && events[0].isStateChange) {
 		events += (1..6).collect { ep -> endpointEvent(ep, map.clone()) }
 		cmds << "delay 3000"
-		cmds += delayBetween((1..6).collect { ep -> encap(zwave.meterV3.meterGet(scale: 2), ep) })
+		cmds += delayBetween((1..6).collect { ep -> encap(zwave.meterV3.meterGet(scale: 2), ep) }, 1000)
 	}
 	if(cmds) events << response(cmds)
 	events
@@ -209,12 +222,35 @@ def zwaveEvent(physicalgraph.zwave.commands.meterv3.MeterReport cmd, ep) {
 			cmds << "delay 400"
 		}
 	}
+	// get temp report, throttled to 1 min
+	if (!state.lastTemp || (now() - state.lastTemp)/1000 >= 60)
+		cmds << zwave.configurationV1.configurationGet(parameterNumber: 90).format()
+	cmds << "delay 400"
+
 	cmds ? [event, response(cmds)] : event
 }
 
 def zwaveEvent(physicalgraph.zwave.commands.manufacturerspecificv2.ManufacturerSpecificReport cmd, ep) {
 	updateDataValue("MSR", String.format("%04X-%04X-%04X", cmd.manufacturerId, cmd.productTypeId, cmd.productId))
 	null
+}
+
+def zwaveEvent(physicalgraph.zwave.commands.configurationv2.ConfigurationReport cmd, ep) {
+	def temperatureEvent
+	if (cmd.parameterNumber == 90) {
+		def temperature = convertTemp(cmd.configurationValue)
+		if (getTemperatureScale() == "C") {
+			temperatureEvent = [name:"temperature", value: Math.round(temperature * 100) / 100]
+		} else {
+			temperatureEvent = [name:"temperature", value: Math.round(celsiusToFahrenheit(temperature) * 100) / 100]
+		}
+		state.lastTemp = now()
+	} else {
+		log.debug "${device.displayName} parameter '${cmd.parameterNumber}', size '${cmd.size}', value'${cmd.configurationValue}'"
+	}
+	if (temperatureEvent) {
+		createEvent(temperatureEvent)
+	}
 }
 
 def zwaveEvent(physicalgraph.zwave.Command cmd, ep) {
@@ -245,17 +281,20 @@ def off3() { onOffCmd(0, 3) }
 def off4() { onOffCmd(0, 4) }
 
 def refresh() {
-	delayBetween([
+	def cmds = [
 		zwave.basicV1.basicGet().format(),
 		zwave.meterV3.meterGet(scale: 0).format(),
 		zwave.meterV3.meterGet(scale: 2).format(),
-		// also always get non-switched outlets state
-		encap(zwave.meterV3.meterGet(scale: 0), 5),
-		encap(zwave.meterV3.meterGet(scale: 2), 5),
-		encap(zwave.meterV3.meterGet(scale: 0), 6),
-		encap(zwave.meterV3.meterGet(scale: 2), 6),
 		encap(zwave.basicV1.basicGet(), 1)  // further gets are sent from the basic report handler
-	], 500)
+	]
+	// get power and energy values for non-switched outlets
+	(5..6).each { endpoint ->
+		cmds << encap(zwave.meterV3.meterGet(scale: 0), endpoint)
+		cmds << encap(zwave.meterV3.meterGet(scale: 2), endpoint)
+	}
+	// get current temperature
+	cmds << zwave.configurationV1.configurationGet(parameterNumber: 90).format()
+    delayBetween(cmds, 1000)
 }
 
 def resetCmd(endpoint = null) {
@@ -280,18 +319,21 @@ def configure() {
 	log.debug "Doing configure()"
 
 	def cmds = [
-		zwave.configurationV1.configurationSet(parameterNumber: 101, size: 4, configurationValue: [0, 0, 0, 1]).format(),
+//		zwave.configurationV1.configurationSet(parameterNumber: 101, size: 4, configurationValue: [0, 0, 0, 1]).format(),
+		zwave.configurationV1.configurationSet(parameterNumber: 101, size: 4, configurationValue: [0, 0, 0, 0x7f]).format(),
 		zwave.configurationV1.configurationSet(parameterNumber: 102, size: 4, configurationValue: [0, 0, 0x7f, 0]).format(),
+		zwave.configurationV1.configurationSet(parameterNumber: 111, size: 4, scaledConfigurationValue: 15*60).format(),
 		zwave.configurationV1.configurationSet(parameterNumber: 112, size: 4, scaledConfigurationValue: 90).format(),
 	]
 	[5, 6, 7, 8, 9, 10, 11].each { p ->
-		cmds << zwave.configurationV1.configurationSet(parameterNumber: p, size: 2, scaledConfigurationValue: 5).format()
+//		cmds << zwave.configurationV1.configurationSet(parameterNumber: p, size: 2, scaledConfigurationValue: 5).format()
+		cmds << zwave.configurationV1.configurationSet(parameterNumber: p, size: 2, scaledConfigurationValue: 1).format()
 	}
 	[12, 13, 14, 15, 16, 17, 18].each { p ->
-		cmds << zwave.configurationV1.configurationSet(parameterNumber: p, size: 1, scaledConfigurationValue: 50).format()
+//		cmds << zwave.configurationV1.configurationSet(parameterNumber: p, size: 1, scaledConfigurationValue: 50).format()
+		cmds << zwave.configurationV1.configurationSet(parameterNumber: p, size: 1, scaledConfigurationValue: 10).format()
 	}
 	cmds += [
-		zwave.configurationV1.configurationSet(parameterNumber: 111, size: 4, scaledConfigurationValue: 15*60).format(),
 		zwave.configurationV1.configurationSet(parameterNumber: 4, size: 1, configurationValue: [1]).format(),
 	]
 	delayBetween(cmds) + "delay 5000" + refresh()
@@ -316,3 +358,15 @@ private encap(cmd, endpoint) {
 		cmd.format()
 	}
 }
+
+def convertTemp(value) {
+	def highbit = value[0]
+	def lowbit = value[1]
+
+	if (highbit > 127)
+		highbit = highbit - 256
+	lowbit = lowbit * 0.00390625
+
+	return highbit + lowbit
+}
+
